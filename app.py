@@ -292,7 +292,7 @@ st.title("🤖 コネクトフォーAI対戦 🔴🟡")
 
 # モデルとMCTSのインスタンスを準備
 net = load_ai_model()
-mcts = MCTS(net, sims=1600)
+mcts = MCTS(net, sims=3200)
 
 # ゲームが開始されたかどうかの状態を管理
 if 'game_started' not in st.session_state:
