@@ -272,14 +272,14 @@ def handle_ai_turn(mcts):
             ai_move = np.argmax(policy)
             env.play(ai_move)
 
-        winner = env.winner()
         if env.game_over():
             st.session_state.game_over = True
+            winner = env.winner()
             # AIが勝ったかどうかの判定を修正
             if winner == -st.session_state.human_player:
                 st.session_state.message = "残念、AIの勝ちです！🤖"
                 st.session_state.winner = "AI"
-            else: # 引き分け
+            elif winner == 0: # 引き分け
                 st.session_state.message = "引き分けです。良い勝負でした！🤝"
                 st.session_state.winner = "Draw"
         else:
@@ -292,7 +292,7 @@ st.title("🤖 コネクトフォーAI対戦 🔴🟡")
 
 # モデルとMCTSのインスタンスを準備
 net = load_ai_model()
-mcts = MCTS(net, sims=200)
+mcts = MCTS(net, sims=1000)
 
 # ゲームが開始されたかどうかの状態を管理
 if 'game_started' not in st.session_state:
@@ -345,4 +345,28 @@ else:
                 # 人間が勝ったかどうかの判定を修正
                 if winner == st.session_state.human_player:
                     st.session_state.message = "おめでとうございます！あなたの勝ちです！🎉"
-                    st
+                    st.session_state.winner = "You"
+                else: # 引き分け
+                    st.session_state.message = "引き分けです。良い勝負でした！🤝"
+                    st.session_state.winner = "Draw"
+            else:
+                # AIのターンへ
+                draw_board(st.session_state.env.board) 
+                handle_ai_turn(mcts)
+
+            st.rerun() # 画面を再描画
+
+    # ゲーム終了時のメッセージ
+    if st.session_state.game_over:
+        if st.session_state.winner == "You":
+            st.balloons()
+            message_placeholder.success(st.session_state.message)
+        elif st.session_state.winner == "AI":
+            message_placeholder.error(st.session_state.message)
+        else: # Draw
+            message_placeholder.warning(st.session_state.message)
+    
+    # ゲームをリセットして設定画面に戻るボタン
+    if st.button("設定に戻る"):
+        st.session_state.game_started = False
+        st.rerun()
