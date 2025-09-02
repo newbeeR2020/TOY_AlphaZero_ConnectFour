@@ -9,7 +9,7 @@ from collections import deque
 
 # ==============================================================================
 # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-# 提供されたAIとゲームのコードをここに貼り付けます
+# 提供されたAIとゲームのコード（変更なし）
 # ==============================================================================
 
 # Cell 2: Connect Four Environment
@@ -216,20 +216,17 @@ class MCTS:
 
 # 定数
 MODEL_PATH = 'my_model_state2.pth'
-AI_PLAYER = -1
-HUMAN_PLAYER = 1
 
-# CSSで駒を円形にする
+# 駒の色を決定する関数を修正
 def get_piece_color(player):
-    if player == HUMAN_PLAYER:
-        return "red"
-    elif player == AI_PLAYER:
-        return "yellow"
-    else:
-        return "white"
+    if 'human_player' in st.session_state:
+        if player == st.session_state.human_player:
+            return "red"
+        elif player == -st.session_state.human_player:
+            return "yellow"
+    return "white"
 
 def draw_board(board):
-    """盤面をStreamlitに描画する"""
     st.write("")
     board_html = '<div style="background-color: blue; padding: 10px; border-radius: 10px; display: grid; grid-template-columns: repeat(7, 1fr); grid-gap: 5px;">'
     for r in range(ConnectFour.ROWS):
@@ -243,10 +240,8 @@ def draw_board(board):
 
 @st.cache_resource
 def load_ai_model():
-    """AIモデルをロードし、キャッシュする"""
     net = Net()
     try:
-        # CPUで実行する場合も考慮
         net.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device('cpu')))
         net.eval()
     except FileNotFoundError:
@@ -254,30 +249,37 @@ def load_ai_model():
         st.stop()
     return net
 
-def initialize_game():
-    """ゲームの状態を初期化する"""
+# ゲームの初期化関数を修正
+def initialize_game(human_turn):
     st.session_state.env = ConnectFour()
     st.session_state.game_over = False
     st.session_state.winner = None
-    st.session_state.message = "あなたの番です。列を選択してください。"
+    st.session_state.game_started = True
+    st.session_state.human_player = human_turn # プレイヤーが1か-1かを保存
+    
+    # 最初のメッセージを設定
+    if human_turn == 1:
+        st.session_state.message = "あなたの番です。列を選択してください。"
+    else:
+        st.session_state.message = "AIの番です。"
+
 
 def handle_ai_turn(mcts):
-    """AIの手番を処理する"""
     env = st.session_state.env
     if not env.game_over():
         with st.spinner("AIが考えています... 🤔"):
-            # temp=0 にして、最も勝率の高い手を選択させる
             policy = mcts.get_policy(env, temp=0) 
             ai_move = np.argmax(policy)
             env.play(ai_move)
 
+        winner = env.winner()
         if env.game_over():
             st.session_state.game_over = True
-            winner = env.winner()
-            if winner == AI_PLAYER:
+            # AIが勝ったかどうかの判定を修正
+            if winner == -st.session_state.human_player:
                 st.session_state.message = "残念、AIの勝ちです！🤖"
                 st.session_state.winner = "AI"
-            elif winner == 0:
+            else: # 引き分け
                 st.session_state.message = "引き分けです。良い勝負でした！🤝"
                 st.session_state.winner = "Draw"
         else:
@@ -287,65 +289,60 @@ def handle_ai_turn(mcts):
 # --- メインの実行部分 ---
 
 st.title("🤖 コネクトフォーAI対戦 🔴🟡")
-st.write("あなたが**赤色**の駒、AIが**黄色**の駒です。")
 
 # モデルとMCTSのインスタンスを準備
 net = load_ai_model()
-mcts = MCTS(net, sims=200) # シミュレーション回数は必要に応じて調整
+mcts = MCTS(net, sims=200)
 
-# ゲームの初期化
-if 'env' not in st.session_state:
-    initialize_game()
+# ゲームが開始されたかどうかの状態を管理
+if 'game_started' not in st.session_state:
+    st.session_state.game_started = False
 
-# ゲームのリセットボタン
-if st.button("新しいゲームを始める"):
-    initialize_game()
+# --- ゲーム開始前の設定画面 ---
+if not st.session_state.game_started:
+    st.subheader("ゲーム設定")
+    turn_choice = st.radio(
+        "どちらの番でプレイしますか？",
+        ('先手 (あなたは赤色)', '後手 (あなたは赤色)')
+    )
+    
+    if st.button("ゲーム開始", type="primary"):
+        # プレイヤーの選択に応じて初期化
+        human_turn = 1 if '先手' in turn_choice else -1
+        initialize_game(human_turn)
+        
+        # プレイヤーが後手を選んだ場合、AIが最初に手を打つ
+        if st.session_state.human_player == -1:
+            handle_ai_turn(mcts)
+        
+        st.rerun() # 画面を再描画してゲーム画面に遷移
 
-# 現在の盤面を描画
-draw_board(st.session_state.env.board)
+# --- ゲーム中の画面 ---
+else:
+    # 盤面を描画
+    draw_board(st.session_state.env.board)
 
-# メッセージ表示エリア
-message_placeholder = st.empty()
-message_placeholder.info(st.session_state.message)
+    # メッセージ表示エリア
+    message_placeholder = st.empty()
+    message_placeholder.info(st.session_state.message)
 
-# プレイヤーの入力（ボタン）
-if not st.session_state.game_over:
+    # プレイヤーの入力（ボタン）
+    is_human_turn = (st.session_state.env.current_player == st.session_state.human_player) and not st.session_state.game_over
+    
     cols = st.columns(ConnectFour.COLS)
     valid_moves = st.session_state.env.valid_moves()
 
     for i, col in enumerate(cols):
-        # 有効な手でない場合はボタンを無効化
-        is_disabled = i not in valid_moves
+        # 人間のターンでない、または無効な手の場合はボタンを無効化
+        is_disabled = not is_human_turn or i not in valid_moves
         if col.button(f"列 {i+1}", key=f"col_{i}", disabled=is_disabled):
-            # --- 人間の手番 ---
             env = st.session_state.env
-            env.play(i)
+            env.play(i) # 人間の手を反映
 
-            # 勝敗チェック
+            winner = env.winner()
             if env.game_over():
                 st.session_state.game_over = True
-                winner = env.winner()
-                if winner == HUMAN_PLAYER:
+                # 人間が勝ったかどうかの判定を修正
+                if winner == st.session_state.human_player:
                     st.session_state.message = "おめでとうございます！あなたの勝ちです！🎉"
-                    st.session_state.winner = "You"
-                elif winner == 0:
-                    st.session_state.message = "引き分けです。良い勝負でした！🤝"
-                    st.session_state.winner = "Draw"
-            else:
-                # --- AIの手番 ---
-                # 盤面を更新してからAIのターンへ
-                draw_board(st.session_state.env.board) 
-                handle_ai_turn(mcts)
-
-            # 画面を再描画
-            st.rerun()
-
-# ゲーム終了時のメッセージ
-if st.session_state.game_over:
-    if st.session_state.winner == "You":
-        st.balloons()
-        message_placeholder.success(st.session_state.message)
-    elif st.session_state.winner == "AI":
-        message_placeholder.error(st.session_state.message)
-    else:
-        message_placeholder.warning(st.session_state.message)
+                    st
